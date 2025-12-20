@@ -1,0 +1,95 @@
+quarkus:
+  application:
+    name: cluster-watchdog
+  http:
+    port: 8090
+  log:
+    level: INFO
+    category:
+      "com.telcobright.watchdog":
+        level: DEBUG
+
+# Scheduler intervals
+watchdog:
+  check-interval: 60s
+  kafka-check-interval: 120s
+  bgp-check-interval: 300s
+
+# Cluster configuration - overwritten per tenant deployment
+cluster:
+  tenant: link3
+  name: link3-kafka-cluster
+  auto-heal-enabled: true
+
+  # This node's local config (agent will fix these)
+  # NOTE: Update node-id and overlay-ip per server during deployment
+  local:
+    node-id: 1
+    wire-guard-interface: wg0
+    bridge: lxdbr0
+    overlay-ip: 10.10.199.20/24
+    frr-container: frr-router
+
+  snap:
+    hold-lxd-refresh: true
+
+  # Kafka cluster info (for REST API queries)
+  kafka:
+    bootstrap-servers: 10.10.199.20:9092,10.10.198.20:9092,10.10.197.20:9092
+    expected-brokers: 3
+
+  # All nodes info (for REST API queries)
+  nodes:
+    node1:
+      id: 1
+      host-ip: 123.200.0.50
+      ssh-port: 8210
+      overlay-ip: 10.10.199.20
+      bridge-ip: 10.10.199.1
+      services:
+        - name: kafka
+          type: docker
+          container: kafka
+          port: 9092
+        - name: zookeeper
+          type: docker
+          container: zookeeper
+          port: 2181
+        - name: frr
+          type: docker
+          container: frr-router
+          port: 179
+    node2:
+      id: 2
+      host-ip: 123.200.0.117
+      ssh-port: 8210
+      overlay-ip: 10.10.198.20
+      bridge-ip: 10.10.198.1
+      services:
+        - name: kafka
+          type: docker
+          container: kafka
+          port: 9092
+        - name: frr
+          type: docker
+          container: frr-router
+          port: 179
+    node3:
+      id: 3
+      host-ip: 123.200.0.165
+      ssh-port: 8210
+      overlay-ip: 10.10.197.20
+      bridge-ip: 10.10.197.1
+      services:
+        - name: kafka
+          type: docker
+          container: kafka
+          port: 9092
+        - name: mysql
+          type: lxc
+          container: mysql-master
+          port: 3306
+        - name: frr
+          type: docker
+          container: frr-router
+          port: 179

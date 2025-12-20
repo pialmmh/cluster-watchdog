@@ -1,0 +1,28 @@
+[Unit]
+Description=Cluster Watchdog Service
+After=network.target docker.service snap.lxd.daemon.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+WorkingDirectory=/opt/cluster-watchdog
+
+ExecStart=/usr/bin/java \
+    -Xms256m -Xmx512m \
+    -Dquarkus.config.locations=/opt/cluster-watchdog/application.yml \
+    -jar /opt/cluster-watchdog/quarkus-run.jar
+
+Restart=always
+RestartSec=10
+
+StandardOutput=append:/var/log/cluster-watchdog.log
+StandardError=append:/var/log/cluster-watchdog.log
+SyslogIdentifier=cluster-watchdog
+
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
