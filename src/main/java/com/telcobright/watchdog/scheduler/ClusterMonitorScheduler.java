@@ -47,26 +47,34 @@ public class ClusterMonitorScheduler {
     @Inject
     BgpMonitor bgpMonitor;
 
+    @Inject
+    SystemdMonitor systemdMonitor;
+
     private volatile Instant lastCheck;
     private volatile List<String> lastAlerts = new ArrayList<>();
 
     @Scheduled(every = "${watchdog.check-interval:60s}")
     void monitorLocal() {
-        LOG.debugf("Running local check for node %d", config.local().nodeId());
+        LOG.infof("=== Local health check started - Node %d ===", config.local().nodeId());
         lastCheck = Instant.now();
         lastAlerts.clear();
 
         // Fix LOCAL issues only
+        checkKafkaIpService();
         checkAndFixLocalNetworkIp();
         checkLocalWireGuard();
+        checkCriticalSystemdServices();
         checkLocalDockerContainers();
         checkLocalLxcContainers();
         checkSnapRefreshHold();
 
         if (!lastAlerts.isEmpty()) {
-            LOG.warnf("Local check completed with %d alerts", lastAlerts.size());
+            LOG.warnf("=== Local check completed with %d alerts ===", lastAlerts.size());
+            for (String alert : lastAlerts) {
+                LOG.warnf("  ALERT: %s", alert);
+            }
         } else {
-            LOG.debug("Local check completed - all healthy");
+            LOG.infof("=== Local check completed - all healthy ===");
         }
     }
 
@@ -117,17 +125,20 @@ public class ClusterMonitorScheduler {
         String overlayIp = config.local().overlayIp().orElse(null);
 
         if (overlayIp != null && !overlayIp.isEmpty()) {
+            LOG.debugf("[NETWORK] Checking bridge %s for IP %s", bridgeName, overlayIp);
             var action = new AddSecondaryIpAction(networkMonitor, bridgeName, overlayIp);
             if (action.isNeeded()) {
-                LOG.infof("Secondary IP %s missing on %s, adding...", overlayIp, bridgeName);
+                LOG.warnf("[NETWORK] Secondary IP %s missing on %s, adding...", overlayIp, bridgeName);
                 var result = action.execute();
                 if (result.isSuccess()) {
-                    LOG.info("Secondary IP added successfully");
+                    LOG.infof("[NETWORK] Secondary IP %s added to %s successfully", overlayIp, bridgeName);
                 } else {
-                    String alert = "Failed to add secondary IP: " + result.stderr();
-                    LOG.error(alert);
+                    String alert = "Failed to add secondary IP " + overlayIp + ": " + result.stderr();
+                    LOG.errorf("[NETWORK] %s", alert);
                     lastAlerts.add(alert);
                 }
+            } else {
+                LOG.debugf("[NETWORK] Secondary IP %s already present on %s", overlayIp, bridgeName);
             }
         }
     }
@@ -138,64 +149,144 @@ public class ClusterMonitorScheduler {
             return;
         }
 
+        LOG.debugf("[WIREGUARD] Checking interface: %s", wgInterface);
         var action = new StartWireGuardAction(wireGuardMonitor, wgInterface);
         if (action.isNeeded()) {
-            LOG.infof("WireGuard interface %s is down, starting...", wgInterface);
+            LOG.warnf("[WIREGUARD] Interface %s is down, starting...", wgInterface);
             var result = action.execute();
-            if (!result.isSuccess()) {
-                String alert = "Failed to start WireGuard: " + result.stderr();
-                LOG.error(alert);
+            if (result.isSuccess()) {
+                LOG.infof("[WIREGUARD] Interface %s started successfully", wgInterface);
+            } else {
+                String alert = "Failed to start WireGuard " + wgInterface + ": " + result.stderr();
+                LOG.errorf("[WIREGUARD] %s", alert);
                 lastAlerts.add(alert);
             }
+        } else {
+            LOG.debugf("[WIREGUARD] Interface %s is up", wgInterface);
         }
 
         // Check peer connectivity
         var status = wireGuardMonitor.checkInterface(wgInterface);
         if ("DEGRADED".equals(status.status().name())) {
-            lastAlerts.add("WireGuard: " + status.message());
+            LOG.warnf("[WIREGUARD] %s: %s", wgInterface, status.message());
+            lastAlerts.add("WireGuard " + wgInterface + ": " + status.message());
+        } else {
+            LOG.debugf("[WIREGUARD] %s peer status: %s", wgInterface, status.message());
         }
     }
 
     private void checkLocalDockerContainers() {
+        LOG.debug("[DOCKER] Checking Docker daemon and containers");
         if (!dockerMonitor.isDockerRunning()) {
+            LOG.error("[DOCKER] Docker daemon not running");
             lastAlerts.add("Docker daemon not running");
             return;
         }
+        LOG.debug("[DOCKER] Docker daemon is running");
 
         var containers = dockerMonitor.listContainers();
+        int running = 0, stopped = 0;
         for (var container : containers) {
-            if (container.state() != com.telcobright.watchdog.model.ContainerStatus.State.RUNNING) {
+            if (container.state() == com.telcobright.watchdog.model.ContainerStatus.State.RUNNING) {
+                running++;
+            } else {
+                stopped++;
                 if (isCriticalContainer(container.name())) {
-                    lastAlerts.add("Critical container stopped: " + container.name());
+                    LOG.warnf("[DOCKER] Critical container stopped: %s (state: %s)", container.name(), container.state());
+                    lastAlerts.add("Critical Docker container stopped: " + container.name());
                 }
             }
         }
+        LOG.debugf("[DOCKER] Containers: %d running, %d stopped", running, stopped);
     }
 
     private void checkLocalLxcContainers() {
+        LOG.debug("[LXC] Checking LXD daemon and containers");
         if (!lxcMonitor.isLxdRunning()) {
+            LOG.error("[LXC] LXD daemon not running");
             lastAlerts.add("LXD daemon not running");
             return;
         }
+        LOG.debug("[LXC] LXD daemon is running");
 
         var containers = lxcMonitor.listContainers();
+        int running = 0, stopped = 0;
         for (var container : containers) {
-            if (container.state() != com.telcobright.watchdog.model.ContainerStatus.State.RUNNING) {
+            if (container.state() == com.telcobright.watchdog.model.ContainerStatus.State.RUNNING) {
+                running++;
+            } else {
+                stopped++;
                 if (isCriticalContainer(container.name())) {
+                    LOG.warnf("[LXC] Critical container stopped: %s (state: %s)", container.name(), container.state());
                     lastAlerts.add("Critical LXC container stopped: " + container.name());
                 }
             }
         }
+        LOG.debugf("[LXC] Containers: %d running, %d stopped", running, stopped);
     }
 
     private void checkSnapRefreshHold() {
         if (config.snap().holdLxdRefresh()) {
             var action = new HoldSnapRefreshAction(snapManager, "lxd");
             if (action.isNeeded()) {
-                LOG.info("LXD snap refresh not held, applying hold...");
+                LOG.info("[SNAP] LXD snap refresh not held, applying hold...");
                 var result = action.execute();
-                if (!result.isSuccess()) {
-                    LOG.warn("Failed to hold LXD refresh: " + result.stderr());
+                if (result.isSuccess()) {
+                    LOG.info("[SNAP] LXD snap refresh hold applied successfully");
+                } else {
+                    LOG.warnf("[SNAP] Failed to hold LXD refresh: %s", result.stderr());
+                }
+            } else {
+                LOG.debug("[SNAP] LXD snap refresh already held");
+            }
+        }
+    }
+
+    private void checkKafkaIpService() {
+        String serviceName = config.local().kafkaIpService();
+        LOG.debugf("[SYSTEMD] Checking Kafka IP service: %s", serviceName);
+
+        if (!systemdMonitor.isServiceActive(serviceName)) {
+            LOG.warnf("[SYSTEMD] Service %s not running, starting...", serviceName);
+            var result = systemdMonitor.startService(serviceName);
+            if (result.isSuccess()) {
+                LOG.infof("[SYSTEMD] Service %s started successfully", serviceName);
+            } else {
+                String alert = "Failed to start " + serviceName + ": " + result.stderr();
+                LOG.errorf("[SYSTEMD] %s", alert);
+                lastAlerts.add(alert);
+            }
+        } else {
+            LOG.debugf("[SYSTEMD] Service %s is running", serviceName);
+        }
+
+        // Ensure it's enabled for boot
+        if (!systemdMonitor.isServiceEnabled(serviceName)) {
+            LOG.warnf("[SYSTEMD] Service %s not enabled, enabling...", serviceName);
+            systemdMonitor.enableService(serviceName);
+        }
+    }
+
+    private void checkCriticalSystemdServices() {
+        var criticalServices = config.local().criticalServices();
+        if (criticalServices.isEmpty()) {
+            return;
+        }
+
+        for (String serviceName : criticalServices.get()) {
+            LOG.debugf("[SYSTEMD] Checking critical service: %s", serviceName);
+            if (!systemdMonitor.isServiceActive(serviceName)) {
+                String alert = "Critical service not running: " + serviceName;
+                LOG.warnf("[SYSTEMD] %s", alert);
+                lastAlerts.add(alert);
+
+                // Try to start it
+                LOG.infof("[SYSTEMD] Attempting to start %s...", serviceName);
+                var result = systemdMonitor.startService(serviceName);
+                if (result.isSuccess()) {
+                    LOG.infof("[SYSTEMD] Service %s started successfully", serviceName);
+                } else {
+                    LOG.errorf("[SYSTEMD] Failed to start %s: %s", serviceName, result.stderr());
                 }
             }
         }

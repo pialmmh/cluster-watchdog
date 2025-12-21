@@ -39,6 +39,13 @@ public interface ClusterConfig {
         Optional<String> overlayIp();
 
         Optional<String> frrContainer();
+
+        /** Systemd service that persists Kafka IP on bridge */
+        @WithDefault("lxdbr0-kafka-ip")
+        String kafkaIpService();
+
+        /** Critical systemd services to monitor */
+        Optional<List<String>> criticalServices();
     }
 
     interface SnapConfig {
