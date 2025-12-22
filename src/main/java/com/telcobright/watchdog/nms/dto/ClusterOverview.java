@@ -24,6 +24,7 @@ public class ClusterOverview {
     private int controllerId;
     private String kafkaVersion;
     private String tenantName;
+    private String profile;
     private String bootstrapServers;
     private List<BootstrapServerStatus> brokerStatuses;
 }

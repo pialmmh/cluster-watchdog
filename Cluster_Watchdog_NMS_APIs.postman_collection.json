@@ -1,0 +1,338 @@
+{
+	"info": {
+		"_postman_id": "cluster-watchdog-nms-v1-2025",
+		"name": "Cluster Watchdog - NMS APIs v1",
+		"description": "Complete API collection for Cluster Watchdog Network Monitoring Service (NMS)\n\n**Base URL:** http://localhost:8090\n**API Version:** v1\n**Date:** 2025-12-22\n\n## API Categories\n\n### Connection Health Monitoring (5 endpoints)\nMonitor the health and statistics of all system connections including Kafka, MySQL, and other services.\n\n### Kafka Cluster Monitoring (12 endpoints)\nComprehensive monitoring for Kafka clusters including broker health, topic metrics, consumer lag, and storage.\n\n### MySQL Database Monitoring (3 endpoints)\nMonitor MySQL database instances, replication status, and health metrics.\n\n**Total Endpoints:** 20",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Connection Health",
+			"description": "Monitor connection health and statistics across the cluster",
+			"item": [
+				{
+					"name": "Get Health Summary",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/connections/health",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "connections", "health"]
+						},
+						"description": "Returns overall health summary of all connections in the system.\n\n**Response Status Codes:**\n- `200 OK` - All connections are healthy (status: UP)\n- `503 Service Unavailable` - One or more connections are down\n\n**Example Response:**\n```json\n{\n  \"total\": 0,\n  \"healthy\": 0,\n  \"status\": \"UP\"\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Connection Stats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/connections",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "connections"]
+						},
+						"description": "Returns detailed statistics for all monitored connections.\n\n**Includes:**\n- Summary statistics\n- Individual connection metrics\n- Message counts\n- Error counts\n- Reconnection statistics\n\n**Example Response:**\n```json\n{\n  \"summary\": {\n    \"totalConnections\": 0,\n    \"healthyCount\": 0,\n    \"unhealthyCount\": 0,\n    \"totalMessages\": 0,\n    \"totalErrors\": 0,\n    \"totalReconnects\": 0\n  },\n  \"connections\": []\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Minimal Connection Stats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/connections/minimal",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "connections", "minimal"]
+						},
+						"description": "Returns lightweight version of connection statistics with minimal data.\n\n**Use Case:**\n- Dashboard displays\n- Quick health checks\n- Reduced bandwidth usage\n- Frequent polling"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Stats by Connection Type",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/connections/by-type",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "connections", "by-type"]
+						},
+						"description": "Returns connection statistics organized by connection type.\n\n**Connection Types:**\n- `kafka` - Kafka cluster connections\n- `mysql` - MySQL database connections\n- `redis` - Redis cache connections\n- `system` - Other system connections"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Specific Connection Stats",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/connections/:name",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "connections", ":name"],
+							"variable": [
+								{
+									"key": "name",
+									"value": "kafka-admin",
+									"description": "Connection name identifier"
+								}
+							]
+						},
+						"description": "Returns detailed statistics for a specific named connection.\n\n**Response Codes:**\n- `200 OK` - Connection found\n- `404 Not Found` - Connection does not exist\n\n**Example Connection Names:**\n- `kafka-admin` - Kafka admin client\n- `mysql-master` - MySQL master connection\n- `mysql-slave-1` - MySQL slave connection"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Kafka Monitoring",
+			"description": "Comprehensive Kafka cluster monitoring endpoints",
+			"item": [
+				{
+					"name": "Get Cluster Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/clusters/health",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "clusters", "health"]
+						},
+						"description": "Returns simplified health status of the Kafka cluster.\n\n**Response Codes:**\n- `200 OK` - Cluster is healthy\n- `503 Service Unavailable` - Cluster is unhealthy or unreachable\n\n**Example Response (Healthy):**\n```json\n{\n  \"status\": \"HEALTHY\",\n  \"clusterId\": \"bdcom-kafka\",\n  \"brokersOnline\": 3\n}\n```\n\n**Example Response (Unhealthy):**\n```json\n{\n  \"status\": \"UNHEALTHY\",\n  \"error\": \"Unable to connect to Kafka cluster\"\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Cluster Info",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/clusters/info",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "clusters", "info"]
+						},
+						"description": "Returns basic Kafka cluster configuration and connection details.\n\n**Example Response:**\n```json\n{\n  \"clusterId\": \"bdcom-kafka\",\n  \"tenantName\": \"bdcom\",\n  \"bootstrapServers\": \"10.10.199.20:9092,10.10.198.20:9092,10.10.197.20:9092\",\n  \"securityProtocol\": \"PLAINTEXT\",\n  \"enabled\": true\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Cluster Monitoring",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/clusters/monitoring",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "clusters", "monitoring"]
+						},
+						"description": "Returns comprehensive monitoring data for the entire Kafka cluster.\n\n**Includes:**\n- Cluster overview with metrics\n- All broker statuses\n- Topic health information\n- Consumer group details\n- Consumer lag metrics\n- Active client connections\n- Timestamp of data collection\n\n**Response Codes:**\n- `200 OK` - Monitoring data retrieved successfully\n- `503 Service Unavailable` - Unable to connect to cluster"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Cluster Overview",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/clusters/overview",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "clusters", "overview"]
+						},
+						"description": "Returns high-level overview metrics of the Kafka cluster.\n\n**Metrics Included:**\n- Cluster ID and status\n- Total broker count\n- Online/offline broker counts\n- Controller ID\n- Kafka version\n- Tenant information\n- Bootstrap servers\n- Broker connection statuses"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Cluster Storage",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/clusters/storage",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "clusters", "storage"]
+						},
+						"description": "Returns storage and disk usage information for the Kafka cluster.\n\n**Storage Metrics:**\n- Total cluster storage size\n- Log directory paths and sizes per broker\n- Available disk space\n- Topic-wise storage breakdown\n- Partition distribution\n- Storage growth trends\n\n**Response Codes:**\n- `200 OK` - Storage information retrieved\n- `503 Service Unavailable` - Unable to retrieve storage data"
+					},
+					"response": []
+				},
+				{
+					"name": "Reset Cluster Connection",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/clusters/reset",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "clusters", "reset"]
+						},
+						"description": "Resets the Kafka admin client connection pool.\n\n**Use Cases:**\n- Force reconnection after network issues\n- Clear stale connection state\n- Refresh connections after cluster maintenance\n- Resolve connectivity problems\n\n**Example Response:**\n```json\n{\n  \"status\": \"success\",\n  \"message\": \"Kafka admin client connection reset\"\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Broker Status",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/brokers",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "brokers"]
+						},
+						"description": "Returns detailed status information for all Kafka brokers in the cluster.\n\n**Broker Metrics:**\n- Broker ID\n- Host and port\n- Rack assignment\n- Online/offline status\n- Total partition count\n- Leader partition count\n- In-sync replica count\n- Version information"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Topic Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/topics",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "topics"]
+						},
+						"description": "Returns health and configuration status for all Kafka topics.\n\n**Topic Metrics:**\n- Topic name\n- Partition count\n- Replication factor\n- In-sync replica (ISR) count\n- Under-replicated partition count\n- Offline partition count\n- Configuration settings\n- Size and retention information"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Consumer Groups",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/consumer-groups",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "consumer-groups"]
+						},
+						"description": "Returns information about all consumer groups in the cluster.\n\n**Consumer Group Details:**\n- Group ID\n- State (Stable, Dead, Empty, PreparingRebalance, etc.)\n- Protocol type (consumer, connect, etc.)\n- Protocol name\n- Coordinator broker\n- Member count\n- Subscribed topics\n- Partition assignments\n- Consumer instances"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Consumer Lag",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/consumer-lag",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "consumer-lag"]
+						},
+						"description": "Returns detailed consumer lag information for all consumer groups.\n\n**Lag Metrics:**\n- Consumer group ID\n- Topic name\n- Partition number\n- Current offset (consumer position)\n- Log end offset (latest message)\n- Lag (messages behind)\n- Consumer instance/client ID\n- Last commit timestamp"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Consumer Lag by Topic",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/consumer-lag-by-topic",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "consumer-lag-by-topic"]
+						},
+						"description": "Returns consumer lag information aggregated and organized by topic.\n\n**Aggregated Metrics:**\n- Topic name\n- Total lag across all partitions\n- Consumer groups consuming the topic\n- Maximum lag for any partition\n- Average lag across partitions\n- Partition count\n- Consumer count per topic"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Active Connections",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/kafka/connections",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "kafka", "connections"]
+						},
+						"description": "Returns list of active client connections to the Kafka brokers.\n\n**Connection Information:**\n- Client ID\n- Client host/IP address\n- Connection establishment timestamp\n- Client software name and version\n- Protocol version\n- Principal (authentication identity)\n- Requested broker\n- Connection state"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "MySQL Monitoring",
+			"description": "Monitor MySQL database instances and replication health",
+			"item": [
+				{
+					"name": "List All MySQL Instances",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/mysql/instances",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "mysql", "instances"]
+						},
+						"description": "Returns configuration information for all MySQL database instances.\n\n**Example Response:**\n```json\n[\n  {\n    \"instanceId\": \"mysql-master\",\n    \"tenantName\": \"bdcom\",\n    \"host\": \"10.10.197.20\",\n    \"port\": 3306,\n    \"database\": \"routesphere\",\n    \"username\": \"root\",\n    \"role\": \"master\",\n    \"enabled\": true\n  }\n]\n```\n\n**Instance Fields:**\n- Instance ID (unique identifier)\n- Tenant name\n- Host and port\n- Database name\n- Username\n- Role (master/slave)\n- Enabled status"
+					},
+					"response": []
+				},
+				{
+					"name": "Get All Instances Health Summary",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/mysql/instances/health",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "mysql", "instances", "health"]
+						},
+						"description": "Returns health status for all configured MySQL instances.\n\n**Returns:** Map of instance ID to health status\n\n**Health Metrics:**\n- Overall status (HEALTHY/DEGRADED/DOWN/NOT_FOUND)\n- Connection status\n- Replication status (for slave instances)\n- Replication lag (seconds behind master)\n- Master binary log status\n- Threads running\n- Server uptime\n- MySQL version\n\n**Example Response:**\n```json\n{\n  \"mysql-master\": {\n    \"status\": \"HEALTHY\",\n    \"connectionStatus\": \"UP\",\n    \"replicationStatus\": null,\n    \"masterStatus\": {\n      \"file\": \"mysql-bin.000001\",\n      \"position\": 12345\n    },\n    \"threadsRunning\": 5,\n    \"uptime\": 86400,\n    \"version\": \"8.0.35\"\n  }\n}\n```"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Specific Instance Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/nms/mysql/instances/:instanceId",
+							"host": ["{{base_url}}"],
+							"path": ["api", "v1", "nms", "mysql", "instances", ":instanceId"],
+							"variable": [
+								{
+									"key": "instanceId",
+									"value": "mysql-master",
+									"description": "MySQL instance identifier (e.g., mysql-master, mysql-slave-1)"
+								}
+							]
+						},
+						"description": "Returns detailed health status for a specific MySQL instance.\n\n**Response Codes:**\n- `200 OK` - Instance found and health retrieved\n- `404 Not Found` - Instance ID not found\n\n**Valid Instance IDs:**\n- `mysql-master` - Primary database\n- `mysql-slave-1` - Replica database 1\n- `mysql-slave-2` - Replica database 2\n- Any configured instance ID\n\n**Health Status Values:**\n- `HEALTHY` - Instance is running normally\n- `DEGRADED` - Instance has warnings (high lag, etc.)\n- `DOWN` - Cannot connect to instance\n- `NOT_FOUND` - Instance not configured\n\n**Slave-Specific Metrics:**\n- Slave IO running status\n- Slave SQL running status\n- Seconds behind master\n- Master host and port\n- Relay log position\n\n**Master-Specific Metrics:**\n- Binary log file\n- Binary log position\n- Connected slaves count"
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8090",
+			"type": "default"
+		}
+	]
+}

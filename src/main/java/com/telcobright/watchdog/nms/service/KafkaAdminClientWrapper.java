@@ -7,12 +7,18 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.TopicPartitionInfo;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -45,7 +51,7 @@ public class KafkaAdminClientWrapper implements AutoCloseable {
     /**
      * Get cluster overview information.
      */
-    public ClusterOverview getClusterOverview(String tenantName) {
+    public ClusterOverview getClusterOverview(String tenantName, String profile) {
         try {
             DescribeClusterResult clusterResult = adminClient.describeCluster();
 
@@ -77,6 +83,7 @@ public class KafkaAdminClientWrapper implements AutoCloseable {
                     .downBrokers(downBrokers)
                     .controllerId(controller != null ? controller.id() : -1)
                     .tenantName(tenantName)
+                    .profile(profile)
                     .bootstrapServers(bootstrapServers)
                     .brokerStatuses(brokerStatuses)
                     .build();
@@ -93,6 +100,7 @@ public class KafkaAdminClientWrapper implements AutoCloseable {
                     .downBrokers(totalBrokers)
                     .controllerId(-1)
                     .tenantName(tenantName)
+                    .profile(profile)
                     .bootstrapServers(bootstrapServers)
                     .brokerStatuses(brokerStatuses)
                     .build();
@@ -561,17 +569,49 @@ public class KafkaAdminClientWrapper implements AutoCloseable {
                 }
 
                 Node brokerNode = brokerNodeMap.get(brokerId);
+                String brokerHost = brokerNode != null ? brokerNode.host() : "unknown";
+                int brokerPort = brokerNode != null ? brokerNode.port() : -1;
 
-                brokerStorages.add(BrokerStorage.builder()
+                // Fetch filesystem metrics from node_exporter
+                Map<String, String> nodeMetrics = fetchNodeExporterMetrics(brokerHost);
+
+                // Build broker storage with filesystem information
+                BrokerStorage.BrokerStorageBuilder builder = BrokerStorage.builder()
                         .brokerId(brokerId)
-                        .host(brokerNode != null ? brokerNode.host() : "unknown")
-                        .port(brokerNode != null ? brokerNode.port() : -1)
+                        .host(brokerHost)
+                        .port(brokerPort)
                         .storagePaths(storagePaths)
                         .logDirs(logDirInfos)
                         .totalUsedBytes(brokerTotalSize)
                         .totalUsedFormatted(formatBytes(brokerTotalSize))
-                        .status(brokerStatus)
-                        .build());
+                        .status(brokerStatus);
+
+                // Add filesystem information if available
+                if (!nodeMetrics.isEmpty()) {
+                    if (nodeMetrics.containsKey("filesystem_size_bytes")) {
+                        long fsSize = Long.parseLong(nodeMetrics.get("filesystem_size_bytes"));
+                        builder.filesystemSizeBytes(fsSize)
+                               .filesystemSizeFormatted(formatBytes(fsSize));
+                    }
+                    if (nodeMetrics.containsKey("filesystem_avail_bytes")) {
+                        long fsAvail = Long.parseLong(nodeMetrics.get("filesystem_avail_bytes"));
+                        builder.filesystemAvailBytes(fsAvail)
+                               .filesystemAvailFormatted(formatBytes(fsAvail));
+                    }
+                    if (nodeMetrics.containsKey("filesystem_used_bytes")) {
+                        long fsUsed = Long.parseLong(nodeMetrics.get("filesystem_used_bytes"));
+                        builder.filesystemUsedBytes(fsUsed)
+                               .filesystemUsedFormatted(formatBytes(fsUsed));
+                    }
+                    if (nodeMetrics.containsKey("filesystem_used_percent")) {
+                        builder.filesystemUsedPercent(Double.parseDouble(nodeMetrics.get("filesystem_used_percent")));
+                    }
+                    if (nodeMetrics.containsKey("mountpoint")) {
+                        builder.mountPoint(nodeMetrics.get("mountpoint"));
+                    }
+                }
+
+                brokerStorages.add(builder.build());
 
                 totalClusterSize += brokerTotalSize;
             }
@@ -699,6 +739,76 @@ public class KafkaAdminClientWrapper implements AutoCloseable {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /**
+     * Fetch filesystem metrics from node_exporter running on the broker node.
+     */
+    private Map<String, String> fetchNodeExporterMetrics(String host) {
+        Map<String, String> metrics = new HashMap<>();
+
+        try {
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(5))
+                    .build();
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://" + host + ":9100/metrics"))
+                    .timeout(Duration.ofSeconds(10))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                String body = response.body();
+
+                // Parse Prometheus metrics format (handles scientific notation)
+                Pattern sizePattern = Pattern.compile("node_filesystem_size_bytes\\{.*?mountpoint=\"([^\"]+)\".*?}\\s+([\\d.e+]+)");
+                Pattern availPattern = Pattern.compile("node_filesystem_avail_bytes\\{.*?mountpoint=\"([^\"]+)\".*?}\\s+([\\d.e+]+)");
+
+                Matcher sizeMatcher = sizePattern.matcher(body);
+                Matcher availMatcher = availPattern.matcher(body);
+
+                // Find metrics for the root filesystem or /var (where Kafka data is typically stored)
+                while (sizeMatcher.find()) {
+                    String mountpoint = sizeMatcher.group(1);
+                    // Look for root or /var mountpoint
+                    if (mountpoint.equals("/") || mountpoint.equals("/var") || mountpoint.startsWith("/var/")) {
+                        String sizeBytes = sizeMatcher.group(2);
+                        // Convert scientific notation to long
+                        long size = (long) Double.parseDouble(sizeBytes);
+                        metrics.put("filesystem_size_bytes", String.valueOf(size));
+                        metrics.put("mountpoint", mountpoint);
+                        break; // Use the first matching filesystem
+                    }
+                }
+
+                while (availMatcher.find()) {
+                    String mountpoint = availMatcher.group(1);
+                    if (mountpoint.equals("/") || mountpoint.equals("/var") || mountpoint.startsWith("/var/")) {
+                        String availBytes = availMatcher.group(2);
+                        // Convert scientific notation to long
+                        long avail = (long) Double.parseDouble(availBytes);
+                        metrics.put("filesystem_avail_bytes", String.valueOf(avail));
+                        break;
+                    }
+                }
+
+                // Calculate used bytes if we have both size and avail
+                if (metrics.containsKey("filesystem_size_bytes") && metrics.containsKey("filesystem_avail_bytes")) {
+                    long size = Long.parseLong(metrics.get("filesystem_size_bytes"));
+                    long avail = Long.parseLong(metrics.get("filesystem_avail_bytes"));
+                    long used = size - avail;
+                    metrics.put("filesystem_used_bytes", String.valueOf(used));
+                    metrics.put("filesystem_used_percent", String.format("%.2f", (used * 100.0) / size));
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[NMS] Error fetching node_exporter metrics from " + host + ": " + e.getMessage());
+        }
+
+        return metrics;
     }
 
     @Override

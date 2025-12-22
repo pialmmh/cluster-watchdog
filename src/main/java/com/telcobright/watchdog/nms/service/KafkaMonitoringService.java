@@ -1,6 +1,7 @@
 package com.telcobright.watchdog.nms.service;
 
 import com.telcobright.watchdog.config.ClusterConfig;
+import com.telcobright.watchdog.nms.config.NmsConfig;
 import com.telcobright.watchdog.nms.dto.*;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -22,6 +23,9 @@ public class KafkaMonitoringService {
     @Inject
     ClusterConfig clusterConfig;
 
+    @Inject
+    NmsConfig nmsConfig;
+
     private volatile KafkaAdminClientWrapper adminClient;
     private volatile KafkaClusterInfo clusterInfo;
 
@@ -39,9 +43,10 @@ public class KafkaMonitoringService {
     public KafkaMonitoringResponse getClusterMonitoring() {
         try {
             ensureInitialized();
+            String profile = nmsConfig.kafka().profile().orElse(null);
 
             return KafkaMonitoringResponse.builder()
-                    .clusterOverview(adminClient.getClusterOverview(clusterConfig.tenant()))
+                    .clusterOverview(adminClient.getClusterOverview(clusterConfig.tenant(), profile))
                     .brokers(adminClient.getBrokerStatus())
                     .topics(adminClient.getTopicHealth())
                     .consumerGroups(adminClient.getConsumerGroups())
@@ -65,7 +70,8 @@ public class KafkaMonitoringService {
     public ClusterOverview getClusterOverview() {
         try {
             ensureInitialized();
-            return adminClient.getClusterOverview(clusterConfig.tenant());
+            String profile = nmsConfig.kafka().profile().orElse(null);
+            return adminClient.getClusterOverview(clusterConfig.tenant(), profile);
         } catch (Exception e) {
             LOG.error("[NMS] Error getting cluster overview: " + e.getMessage());
             return ClusterOverview.builder()

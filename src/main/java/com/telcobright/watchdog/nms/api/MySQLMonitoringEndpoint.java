@@ -16,7 +16,7 @@ import java.util.Map;
  * REST API endpoint for MySQL database monitoring.
  */
 @ApplicationScoped
-@Path("/api/nms/mysql")
+@Path("/api/v1/nms/mysql")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class MySQLMonitoringEndpoint {

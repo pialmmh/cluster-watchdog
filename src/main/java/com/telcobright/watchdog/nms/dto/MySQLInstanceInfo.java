@@ -16,6 +16,7 @@ import lombok.NoArgsConstructor;
 public class MySQLInstanceInfo {
     private String instanceId;
     private String tenantName;
+    private String profile;
     private String host;
     private int port;
     private String database;

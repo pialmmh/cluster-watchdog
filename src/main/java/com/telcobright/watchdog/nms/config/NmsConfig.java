@@ -37,6 +37,11 @@ public interface NmsConfig {
         String clusterId();
 
         /**
+         * Environment profile (dev, prod, etc).
+         */
+        Optional<String> profile();
+
+        /**
          * Bootstrap servers for Kafka cluster.
          */
         Optional<String> bootstrapServers();
@@ -53,6 +58,11 @@ public interface NmsConfig {
          * Instance identifier.
          */
         String id();
+
+        /**
+         * Environment profile (dev, prod, etc).
+         */
+        Optional<String> profile();
 
         /**
          * MySQL host.

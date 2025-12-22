@@ -1,5 +1,6 @@
 package com.telcobright.watchdog.nms.api;
 
+import com.telcobright.watchdog.config.ClusterConfig;
 import com.telcobright.watchdog.nms.dto.*;
 import com.telcobright.watchdog.nms.service.KafkaMonitoringService;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -15,7 +16,7 @@ import java.util.Map;
  * REST API endpoint for Kafka cluster monitoring.
  */
 @ApplicationScoped
-@Path("/api/nms/kafka")
+@Path("/api/v1/nms/kafka")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class KafkaMonitoringEndpoint {
@@ -23,11 +24,14 @@ public class KafkaMonitoringEndpoint {
     @Inject
     KafkaMonitoringService monitoringService;
 
+    @Inject
+    ClusterConfig clusterConfig;
+
     /**
      * Get cluster info.
      */
     @GET
-    @Path("/cluster")
+    @Path("/clusters/info")
     public Response getClusterInfo() {
         KafkaClusterInfo info = monitoringService.getClusterInfo();
         return Response.ok(info).build();
@@ -37,7 +41,7 @@ public class KafkaMonitoringEndpoint {
      * Get complete monitoring data for the cluster.
      */
     @GET
-    @Path("/monitoring")
+    @Path("/clusters/monitoring")
     public Response getClusterMonitoring() {
         KafkaMonitoringResponse monitoring = monitoringService.getClusterMonitoring();
 
@@ -54,10 +58,22 @@ public class KafkaMonitoringEndpoint {
      * Get cluster overview.
      */
     @GET
-    @Path("/overview")
+    @Path("/clusters/overview")
     public Response getClusterOverview() {
         ClusterOverview overview = monitoringService.getClusterOverview();
-        return Response.ok(overview).build();
+        // Wrap response with tenant name as key for UI compatibility
+        return Response.ok(Map.of(overview.getTenantName(), overview)).build();
+    }
+
+    /**
+     * Get cluster health.
+     */
+    @GET
+    @Path("/clusters/health")
+    public Response getClusterHealth() {
+        ClusterOverview overview = monitoringService.getClusterOverview();
+        // Wrap response with tenant name as key for UI compatibility
+        return Response.ok(Map.of(overview.getTenantName(), overview)).build();
     }
 
     /**
@@ -107,7 +123,8 @@ public class KafkaMonitoringEndpoint {
     @Path("/consumer-lag-by-topic")
     public Response getConsumerLagByTopic() {
         List<TopicConsumerLagSummary> summary = monitoringService.getConsumerLagByTopic();
-        return Response.ok(summary).build();
+        // Wrap response with tenant name as key for UI compatibility
+        return Response.ok(Map.of(clusterConfig.tenant(), summary)).build();
     }
 
     /**
@@ -124,7 +141,7 @@ public class KafkaMonitoringEndpoint {
      * Get cluster storage.
      */
     @GET
-    @Path("/storage")
+    @Path("/clusters/storage")
     public Response getClusterStorage() {
         ClusterStorage storage = monitoringService.getClusterStorage();
 
@@ -141,7 +158,7 @@ public class KafkaMonitoringEndpoint {
      * Reset the admin client connection.
      */
     @POST
-    @Path("/reset")
+    @Path("/clusters/reset")
     public Response resetConnection() {
         monitoringService.resetClient();
         return Response.ok(Map.of(

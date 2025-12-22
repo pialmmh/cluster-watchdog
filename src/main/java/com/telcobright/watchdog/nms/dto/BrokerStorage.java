@@ -27,4 +27,14 @@ public class BrokerStorage {
     private long totalUsedBytes;
     private String totalUsedFormatted;
     private String status;
+
+    // Filesystem information from node_exporter
+    private Long filesystemSizeBytes;
+    private String filesystemSizeFormatted;
+    private Long filesystemAvailBytes;
+    private String filesystemAvailFormatted;
+    private Long filesystemUsedBytes;
+    private String filesystemUsedFormatted;
+    private Double filesystemUsedPercent;
+    private String mountPoint;
 }

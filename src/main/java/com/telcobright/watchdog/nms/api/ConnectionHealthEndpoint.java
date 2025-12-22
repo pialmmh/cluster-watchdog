@@ -15,7 +15,7 @@ import java.util.Map;
 /**
  * REST API for connection health monitoring.
  */
-@Path("/api/nms/connections")
+@Path("/api/v1/nms/connections")
 @Produces(MediaType.APPLICATION_JSON)
 public class ConnectionHealthEndpoint {
 
