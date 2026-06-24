@@ -155,6 +155,23 @@ public class KafkaMonitoringEndpoint {
     }
 
     /**
+     * Get system metrics (CPU, Memory) for all brokers.
+     */
+    @GET
+    @Path("/clusters/system-metrics")
+    public Response getSystemMetrics() {
+        ClusterSystemMetrics metrics = monitoringService.getSystemMetrics();
+
+        if (metrics.getError() != null) {
+            return Response.status(Response.Status.SERVICE_UNAVAILABLE)
+                    .entity(metrics)
+                    .build();
+        }
+
+        return Response.ok(metrics).build();
+    }
+
+    /**
      * Reset the admin client connection.
      */
     @POST

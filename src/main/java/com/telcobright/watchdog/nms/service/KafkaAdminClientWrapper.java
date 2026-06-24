@@ -75,7 +75,7 @@ public class KafkaAdminClientWrapper implements AutoCloseable {
             }
 
             return ClusterOverview.builder()
-                    .clusterId(kafkaClusterId)
+                    .clusterId(this.clusterId)
                     .clusterStatus(status)
                     .totalBrokers(totalBrokers)
                     .onlineBrokers(onlineBrokers)
@@ -742,6 +742,89 @@ public class KafkaAdminClientWrapper implements AutoCloseable {
     }
 
     /**
+     * Get system metrics (CPU, Memory) for all brokers.
+     */
+    public ClusterSystemMetrics getSystemMetrics() {
+        List<BrokerSystemMetrics> brokerMetrics = new ArrayList<>();
+
+        try {
+            DescribeClusterResult clusterResult = adminClient.describeCluster();
+            Collection<Node> nodes = clusterResult.nodes().get(TIMEOUT.getSeconds(), TimeUnit.SECONDS);
+
+            for (Node node : nodes) {
+                int brokerId = node.id();
+                String brokerHost = node.host();
+                int brokerPort = node.port();
+
+                // Fetch node_exporter metrics
+                Map<String, String> nodeMetrics = fetchNodeExporterMetrics(brokerHost);
+
+                BrokerSystemMetrics.BrokerSystemMetricsBuilder builder = BrokerSystemMetrics.builder()
+                        .brokerId(brokerId)
+                        .host(brokerHost)
+                        .port(brokerPort)
+                        .status("Online");
+
+                // Add memory information
+                if (nodeMetrics.containsKey("memory_total_bytes")) {
+                    long memTotal = Long.parseLong(nodeMetrics.get("memory_total_bytes"));
+                    builder.memoryTotalBytes(memTotal)
+                           .memoryTotalFormatted(formatBytes(memTotal));
+                }
+                if (nodeMetrics.containsKey("memory_available_bytes")) {
+                    long memAvail = Long.parseLong(nodeMetrics.get("memory_available_bytes"));
+                    builder.memoryAvailableBytes(memAvail)
+                           .memoryAvailableFormatted(formatBytes(memAvail));
+                }
+                if (nodeMetrics.containsKey("memory_used_bytes")) {
+                    long memUsed = Long.parseLong(nodeMetrics.get("memory_used_bytes"));
+                    builder.memoryUsedBytes(memUsed)
+                           .memoryUsedFormatted(formatBytes(memUsed));
+                }
+                if (nodeMetrics.containsKey("memory_used_percent")) {
+                    builder.memoryUsedPercent(Double.parseDouble(nodeMetrics.get("memory_used_percent")));
+                }
+
+                // Add CPU information
+                if (nodeMetrics.containsKey("cpu_cores")) {
+                    builder.cpuCores(Integer.parseInt(nodeMetrics.get("cpu_cores")));
+                }
+                if (nodeMetrics.containsKey("cpu_usage_percent")) {
+                    builder.cpuUsagePercent(Double.parseDouble(nodeMetrics.get("cpu_usage_percent")));
+                }
+                if (nodeMetrics.containsKey("load_average_1min")) {
+                    builder.loadAverage1min(Double.parseDouble(nodeMetrics.get("load_average_1min")));
+                }
+                if (nodeMetrics.containsKey("load_average_5min")) {
+                    builder.loadAverage5min(Double.parseDouble(nodeMetrics.get("load_average_5min")));
+                }
+                if (nodeMetrics.containsKey("load_average_15min")) {
+                    builder.loadAverage15min(Double.parseDouble(nodeMetrics.get("load_average_15min")));
+                }
+
+                brokerMetrics.add(builder.build());
+            }
+
+            brokerMetrics.sort(Comparator.comparingInt(BrokerSystemMetrics::getBrokerId));
+
+            return ClusterSystemMetrics.builder()
+                    .clusterId(clusterId)
+                    .brokerCount(brokerMetrics.size())
+                    .brokers(brokerMetrics)
+                    .build();
+
+        } catch (Exception e) {
+            System.err.println("[NMS] Error getting system metrics: " + e.getMessage());
+            return ClusterSystemMetrics.builder()
+                    .clusterId(clusterId)
+                    .brokerCount(0)
+                    .brokers(new ArrayList<>())
+                    .error("Error fetching system metrics: " + e.getMessage())
+                    .build();
+        }
+    }
+
+    /**
      * Fetch filesystem metrics from node_exporter running on the broker node.
      */
     private Map<String, String> fetchNodeExporterMetrics(String host) {
@@ -753,7 +836,7 @@ public class KafkaAdminClientWrapper implements AutoCloseable {
                     .build();
 
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("http://" + host + ":9100/metrics"))
+                    .uri(URI.create("http://" + host + ":19100/metrics"))
                     .timeout(Duration.ofSeconds(10))
                     .GET()
                     .build();
@@ -766,6 +849,18 @@ public class KafkaAdminClientWrapper implements AutoCloseable {
                 // Parse Prometheus metrics format (handles scientific notation)
                 Pattern sizePattern = Pattern.compile("node_filesystem_size_bytes\\{.*?mountpoint=\"([^\"]+)\".*?}\\s+([\\d.e+]+)");
                 Pattern availPattern = Pattern.compile("node_filesystem_avail_bytes\\{.*?mountpoint=\"([^\"]+)\".*?}\\s+([\\d.e+]+)");
+
+                // Memory patterns
+                Pattern memTotalPattern = Pattern.compile("node_memory_MemTotal_bytes\\s+([\\d.e+]+)");
+                Pattern memAvailPattern = Pattern.compile("node_memory_MemAvailable_bytes\\s+([\\d.e+]+)");
+
+                // Load average patterns
+                Pattern load1Pattern = Pattern.compile("node_load1\\s+([\\d.]+)");
+                Pattern load5Pattern = Pattern.compile("node_load5\\s+([\\d.]+)");
+                Pattern load15Pattern = Pattern.compile("node_load15\\s+([\\d.]+)");
+
+                // CPU cores pattern (count unique cpu IDs)
+                Pattern cpuPattern = Pattern.compile("node_cpu_seconds_total\\{cpu=\"(\\d+)\"");
 
                 Matcher sizeMatcher = sizePattern.matcher(body);
                 Matcher availMatcher = availPattern.matcher(body);
@@ -802,6 +897,97 @@ public class KafkaAdminClientWrapper implements AutoCloseable {
                     long used = size - avail;
                     metrics.put("filesystem_used_bytes", String.valueOf(used));
                     metrics.put("filesystem_used_percent", String.format("%.2f", (used * 100.0) / size));
+                }
+
+                // Parse memory metrics
+                Matcher memTotalMatcher = memTotalPattern.matcher(body);
+                if (memTotalMatcher.find()) {
+                    long memTotal = (long) Double.parseDouble(memTotalMatcher.group(1));
+                    metrics.put("memory_total_bytes", String.valueOf(memTotal));
+                }
+
+                Matcher memAvailMatcher = memAvailPattern.matcher(body);
+                if (memAvailMatcher.find()) {
+                    long memAvail = (long) Double.parseDouble(memAvailMatcher.group(1));
+                    metrics.put("memory_available_bytes", String.valueOf(memAvail));
+                }
+
+                // Calculate memory used
+                if (metrics.containsKey("memory_total_bytes") && metrics.containsKey("memory_available_bytes")) {
+                    long memTotal = Long.parseLong(metrics.get("memory_total_bytes"));
+                    long memAvail = Long.parseLong(metrics.get("memory_available_bytes"));
+                    long memUsed = memTotal - memAvail;
+                    metrics.put("memory_used_bytes", String.valueOf(memUsed));
+                    metrics.put("memory_used_percent", String.format("%.2f", (memUsed * 100.0) / memTotal));
+                }
+
+                // Parse load averages
+                Matcher load1Matcher = load1Pattern.matcher(body);
+                if (load1Matcher.find()) {
+                    metrics.put("load_average_1min", load1Matcher.group(1));
+                }
+
+                Matcher load5Matcher = load5Pattern.matcher(body);
+                if (load5Matcher.find()) {
+                    metrics.put("load_average_5min", load5Matcher.group(1));
+                }
+
+                Matcher load15Matcher = load15Pattern.matcher(body);
+                if (load15Matcher.find()) {
+                    metrics.put("load_average_15min", load15Matcher.group(1));
+                }
+
+                // Count CPU cores
+                Matcher cpuMatcher = cpuPattern.matcher(body);
+                Set<String> cpuCores = new HashSet<>();
+                while (cpuMatcher.find()) {
+                    cpuCores.add(cpuMatcher.group(1));
+                }
+                if (!cpuCores.isEmpty()) {
+                    metrics.put("cpu_cores", String.valueOf(cpuCores.size()));
+                }
+
+                // Calculate CPU usage percentage from idle time
+                Pattern cpuIdlePattern = Pattern.compile("node_cpu_seconds_total\\{cpu=\"(\\d+)\",mode=\"idle\"\\}\\s+([\\d.e+]+)");
+                Pattern cpuTotalPattern = Pattern.compile("node_cpu_seconds_total\\{cpu=\"(\\d+)\",mode=\"\\w+\"\\}\\s+([\\d.e+]+)");
+
+                Map<String, Double> cpuIdleTimes = new HashMap<>();
+                Map<String, Double> cpuTotalTimes = new HashMap<>();
+
+                Matcher idleMatcher = cpuIdlePattern.matcher(body);
+                while (idleMatcher.find()) {
+                    String cpuId = idleMatcher.group(1);
+                    double idleTime = Double.parseDouble(idleMatcher.group(2));
+                    cpuIdleTimes.put(cpuId, idleTime);
+                }
+
+                Matcher totalMatcher = cpuTotalPattern.matcher(body);
+                while (totalMatcher.find()) {
+                    String cpuId = totalMatcher.group(1);
+                    double time = Double.parseDouble(totalMatcher.group(2));
+                    cpuTotalTimes.put(cpuId, cpuTotalTimes.getOrDefault(cpuId, 0.0) + time);
+                }
+
+                // Calculate average CPU usage across all cores
+                if (!cpuIdleTimes.isEmpty() && !cpuTotalTimes.isEmpty()) {
+                    double totalIdlePercent = 0;
+                    int coreCount = 0;
+                    for (String cpuId : cpuIdleTimes.keySet()) {
+                        if (cpuTotalTimes.containsKey(cpuId)) {
+                            double idleTime = cpuIdleTimes.get(cpuId);
+                            double totalTime = cpuTotalTimes.get(cpuId);
+                            if (totalTime > 0) {
+                                double idlePercent = (idleTime / totalTime) * 100.0;
+                                totalIdlePercent += idlePercent;
+                                coreCount++;
+                            }
+                        }
+                    }
+                    if (coreCount > 0) {
+                        double avgIdlePercent = totalIdlePercent / coreCount;
+                        double cpuUsagePercent = 100.0 - avgIdlePercent;
+                        metrics.put("cpu_usage_percent", String.format("%.2f", cpuUsagePercent));
+                    }
                 }
             }
         } catch (Exception e) {

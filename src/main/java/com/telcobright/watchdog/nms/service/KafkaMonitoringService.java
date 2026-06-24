@@ -177,6 +177,23 @@ public class KafkaMonitoringService {
     }
 
     /**
+     * Get system metrics (CPU, Memory) for all brokers.
+     */
+    public ClusterSystemMetrics getSystemMetrics() {
+        try {
+            ensureInitialized();
+            return adminClient.getSystemMetrics();
+        } catch (Exception e) {
+            LOG.error("[NMS] Error getting system metrics: " + e.getMessage());
+            return ClusterSystemMetrics.builder()
+                    .clusterId(clusterConfig.tenant())
+                    .error("Error: " + e.getMessage())
+                    .brokers(Collections.emptyList())
+                    .build();
+        }
+    }
+
+    /**
      * Reset the admin client (useful for reconnection).
      */
     public void resetClient() {
@@ -202,8 +219,11 @@ public class KafkaMonitoringService {
 
     private synchronized void ensureInitialized() {
         if (adminClient == null) {
+            String tenant = clusterConfig.tenant();
+            LOG.infof("[NMS] DEBUG: Read tenant from config: %s", tenant);
+
             String bootstrapServers = clusterConfig.kafka().bootstrapServers();
-            String clusterId = clusterConfig.tenant() + "-kafka";
+            String clusterId = tenant + "-kafka";
 
             LOG.infof("[NMS] Initializing Kafka admin client for %s: %s", clusterId, bootstrapServers);
 
