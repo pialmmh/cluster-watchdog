@@ -59,14 +59,21 @@ public class ClusterMonitorScheduler {
         lastCheck = Instant.now();
         lastAlerts.clear();
 
-        // Fix LOCAL issues only
-        checkKafkaIpService();
-        checkAndFixLocalNetworkIp();
-        checkLocalWireGuard();
-        checkCriticalSystemdServices();
-        checkLocalDockerContainers();
-        checkLocalLxcContainers();
-        checkSnapRefreshHold();
+        if (!config.autoHealEnabled()) {
+            // Monitor-only mode: observe and alert, take NO healing/sudo actions.
+            LOG.info("[MONITOR-ONLY] auto-heal disabled - observing only, no healing actions taken");
+            checkLocalDockerContainers();
+            checkLocalLxcContainers();
+        } else {
+            // Fix LOCAL issues only
+            checkKafkaIpService();
+            checkAndFixLocalNetworkIp();
+            checkLocalWireGuard();
+            checkCriticalSystemdServices();
+            checkLocalDockerContainers();
+            checkLocalLxcContainers();
+            checkSnapRefreshHold();
+        }
 
         if (!lastAlerts.isEmpty()) {
             LOG.warnf("=== Local check completed with %d alerts ===", lastAlerts.size());
