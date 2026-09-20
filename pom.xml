@@ -48,6 +48,12 @@
             <artifactId>quarkus-rest-jackson</artifactId>
         </dependency>
 
+        <!-- REST Client for cluster node communication -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-client-jackson</artifactId>
+        </dependency>
+
         <!-- Scheduler -->
         <dependency>
             <groupId>io.quarkus</groupId>

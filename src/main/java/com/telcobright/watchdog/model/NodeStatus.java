@@ -9,6 +9,7 @@ public record NodeStatus(
         boolean reachable,
         NetworkStatus wireGuard,
         NetworkStatus bridge,
+        BgpRoutingStatus bgpRouting,
         List<ContainerStatus> dockerContainers,
         List<ContainerStatus> lxcContainers,
         List<PeerConnectivity> peerConnectivity,
@@ -27,7 +28,7 @@ public record NodeStatus(
     ) {}
 
     public static NodeStatus unreachable(int nodeId, String hostIp) {
-        return new NodeStatus(nodeId, hostIp, false, null, null,
+        return new NodeStatus(nodeId, hostIp, false, null, null, null,
                 List.of(), List.of(), List.of(), OverallHealth.UNHEALTHY, Instant.now());
     }
 }

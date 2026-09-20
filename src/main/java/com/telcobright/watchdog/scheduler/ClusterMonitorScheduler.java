@@ -52,6 +52,7 @@ public class ClusterMonitorScheduler {
 
     private volatile Instant lastCheck;
     private volatile List<String> lastAlerts = new ArrayList<>();
+    private volatile com.telcobright.watchdog.model.BgpRoutingStatus lastBgpRoutingStatus;
 
     @Scheduled(every = "${watchdog.check-interval:60s}")
     void monitorLocal() {
@@ -100,22 +101,51 @@ public class ClusterMonitorScheduler {
 
     @Scheduled(every = "${watchdog.bgp-check-interval:300s}")
     void monitorBgp() {
-        LOG.debug("Running BGP check");
+        LOG.debug("Running BGP routing check");
 
         String frrContainer = config.local().frrContainer().orElse(null);
-        var status = bgpMonitor.getStatus(frrContainer);
+        var routingStatus = bgpMonitor.getRoutingStatus(frrContainer);
 
-        if (!status.frrRunning()) {
-            LOG.warn("FRR is not running");
+        if (!routingStatus.frrRunning()) {
+            LOG.warn("[BGP] FRR is not running");
             lastAlerts.add("FRR not running");
             return;
         }
 
-        if (status.establishedPeers() < status.totalPeers()) {
+        // Check peer status
+        if (routingStatus.establishedPeers() < routingStatus.totalPeers()) {
             String alert = String.format("BGP: only %d/%d peers established",
-                    status.establishedPeers(), status.totalPeers());
-            LOG.warn(alert);
+                    routingStatus.establishedPeers(), routingStatus.totalPeers());
+            LOG.warn("[BGP] " + alert);
             lastAlerts.add(alert);
+        }
+
+        // Check routing health - alert on missing routes
+        switch (routingStatus.health()) {
+            case HEALTHY:
+                LOG.infof("[BGP] Routing healthy: %s", routingStatus.message());
+                break;
+            case DEGRADED:
+                LOG.warnf("[BGP] Routing degraded: %s", routingStatus.message());
+                lastAlerts.add("BGP routing degraded: " + routingStatus.message());
+                logMissingRoutes(routingStatus);
+                break;
+            case UNHEALTHY:
+                LOG.errorf("[BGP] Routing unhealthy: %s", routingStatus.message());
+                lastAlerts.add("BGP routing unhealthy: " + routingStatus.message());
+                logMissingRoutes(routingStatus);
+                break;
+            default:
+                break;
+        }
+
+        // Store for API queries
+        lastBgpRoutingStatus = routingStatus;
+    }
+
+    private void logMissingRoutes(com.telcobright.watchdog.model.BgpRoutingStatus status) {
+        for (var check : status.missingRoutes()) {
+            LOG.warnf("[BGP] Missing route: %s (type: %s)", check.subnet(), check.type());
         }
     }
 
@@ -310,5 +340,9 @@ public class ClusterMonitorScheduler {
 
     public int getLocalNodeId() {
         return config.local().nodeId();
+    }
+
+    public com.telcobright.watchdog.model.BgpRoutingStatus getLastBgpRoutingStatus() {
+        return lastBgpRoutingStatus;
     }
 }
