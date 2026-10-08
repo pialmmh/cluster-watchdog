@@ -24,8 +24,22 @@ public interface ClusterConfig {
 
     KafkaConfig kafka();
 
+    /** BGP/routing configuration */
+    Optional<BgpConfig> bgp();
+
     /** All nodes in cluster - for REST API queries */
     Map<String, NodeConfig> nodes();
+
+    interface BgpConfig {
+        /** WireGuard overlay subnet (e.g., 10.9.9.0/24) */
+        Optional<String> wireguardSubnet();
+
+        /** VPN client subnet for developer access (e.g., 10.8.0.0/24) */
+        Optional<String> vpnClientSubnet();
+
+        /** Additional custom routes that should be present */
+        Optional<List<String>> additionalExpectedRoutes();
+    }
 
     interface LocalConfig {
         int nodeId();
@@ -46,6 +60,12 @@ public interface ClusterConfig {
 
         /** Critical systemd services to monitor */
         Optional<List<String>> criticalServices();
+
+        /** Expected BGP routes - container subnets this node must reach */
+        Optional<List<String>> expectedContainerSubnets();
+
+        /** Expected WireGuard subnet routes */
+        Optional<List<String>> expectedWireguardSubnets();
     }
 
     interface SnapConfig {
@@ -71,6 +91,9 @@ public interface ClusterConfig {
         Optional<String> overlayIp();
 
         Optional<String> bridgeIp();
+
+        /** Container subnet for this node (e.g., 10.10.199.0/24) */
+        Optional<String> containerSubnet();
 
         Optional<List<ServiceConfig>> services();
     }

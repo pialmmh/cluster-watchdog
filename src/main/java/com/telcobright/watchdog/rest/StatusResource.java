@@ -1,10 +1,14 @@
 package com.telcobright.watchdog.rest;
 
+import com.telcobright.watchdog.config.ClusterConfig;
+import com.telcobright.watchdog.model.BgpRoutingStatus;
 import com.telcobright.watchdog.model.ClusterHealth;
+import com.telcobright.watchdog.scheduler.ClusterMonitorScheduler;
 import com.telcobright.watchdog.service.*;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
@@ -31,6 +35,15 @@ public class StatusResource {
 
     @Inject
     SnapManager snapManager;
+
+    @Inject
+    BgpMonitor bgpMonitor;
+
+    @Inject
+    ClusterConfig config;
+
+    @Inject
+    ClusterMonitorScheduler scheduler;
 
     @GET
     public Map<String, Object> getOverallStatus() {
@@ -115,6 +128,71 @@ public class StatusResource {
                 "pendingRefreshes", pending,
                 "lxdRefreshHeld", lxdHeld,
                 "checkedAt", Instant.now().toString()
+        );
+    }
+
+    @GET
+    @Path("/bgp")
+    public Map<String, Object> getBgpStatus() {
+        String frrContainer = config.local().frrContainer().orElse(null);
+
+        // Get fresh status
+        BgpRoutingStatus routingStatus = bgpMonitor.getRoutingStatus(frrContainer);
+
+        return Map.of(
+                "nodeId", config.local().nodeId(),
+                "frrRunning", routingStatus.frrRunning(),
+                "health", routingStatus.health().name(),
+                "message", routingStatus.message(),
+                "totalPeers", routingStatus.totalPeers(),
+                "establishedPeers", routingStatus.establishedPeers(),
+                "totalRoutes", routingStatus.totalRoutes(),
+                "routeChecks", routingStatus.routeChecks(),
+                "missingRoutes", routingStatus.missingRoutes(),
+                "checkedAt", routingStatus.checkedAt().toString()
+        );
+    }
+
+    @GET
+    @Path("/bgp/routes")
+    public Map<String, Object> getBgpRoutes() {
+        String frrContainer = config.local().frrContainer().orElse(null);
+
+        var bgpRoutes = bgpMonitor.getRoutes(frrContainer);
+        var kernelRoutes = bgpMonitor.getAllRoutes(frrContainer);
+        var neighbors = bgpMonitor.getNeighbors(frrContainer);
+
+        return Map.of(
+                "nodeId", config.local().nodeId(),
+                "bgpRoutes", bgpRoutes,
+                "kernelRoutes", kernelRoutes,
+                "neighbors", neighbors,
+                "checkedAt", Instant.now().toString()
+        );
+    }
+
+    @GET
+    @Path("/bgp/cached")
+    public Map<String, Object> getCachedBgpStatus() {
+        var lastStatus = scheduler.getLastBgpRoutingStatus();
+        if (lastStatus == null) {
+            return Map.of(
+                    "available", false,
+                    "message", "No BGP status check has run yet"
+            );
+        }
+
+        return Map.of(
+                "available", true,
+                "nodeId", config.local().nodeId(),
+                "health", lastStatus.health().name(),
+                "message", lastStatus.message(),
+                "totalPeers", lastStatus.totalPeers(),
+                "establishedPeers", lastStatus.establishedPeers(),
+                "totalRoutes", lastStatus.totalRoutes(),
+                "routeChecks", lastStatus.routeChecks(),
+                "missingRoutes", lastStatus.missingRoutes(),
+                "checkedAt", lastStatus.checkedAt().toString()
         );
     }
 }
